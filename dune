@@ -1,0 +1,18 @@
+(library
+ (public_name aoc2024)
+ (libraries cmdliner)
+ (flags :standard -open Base -open Stdio)
+ (inline_tests)
+ (preprocess
+  (pps ppx_jane)))
+
+(subdir
+ run
+ (dynamic_include ../generate/dune.inc))
+
+(subdir
+ generate
+ (rule
+  (with-stdout-to
+   dune.inc
+   (run ../gen/gen.exe 25))))
