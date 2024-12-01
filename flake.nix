@@ -17,6 +17,7 @@
           version = "n/a";
           src = ./.;
           buildInputs = with pkgs.ocamlPackages; [
+            angstrom
             cmdliner
             hex_encode
             ppx_jane

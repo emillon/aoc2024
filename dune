@@ -1,6 +1,6 @@
 (library
  (public_name aoc2024)
- (libraries cmdliner)
+ (libraries angstrom cmdliner)
  (flags :standard -open Base -open Stdio)
  (inline_tests)
  (preprocess
