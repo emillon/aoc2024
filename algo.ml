@@ -86,7 +86,8 @@ let%expect_test "iter_bytes" =
     ~min:'0'
     ~max:'9'
   |> printf "result: %s";
-  [%expect {|
+  [%expect
+    {|
     8
     9
     10
