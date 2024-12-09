@@ -46,6 +46,22 @@ let p1 t =
   |> List.count ~f:is_in_bounds
 ;;
 
+let all_antinode_locations bounds (a, b) =
+  let d = Vec.sub b a in
+  let rec go i =
+    let l = Vec.add b (Vec.smul d i) in
+    if Vec.in_bounds bounds l then l :: go (i + 1) else []
+  in
+  go 0
+;;
+
+let p2 t =
+  pairs t
+  |> List.concat_map ~f:(all_antinode_locations t.bounds)
+  |> Set.of_list (module Vec)
+  |> Set.length
+;;
+
 let%expect_test _ =
   let t =
     String.concat_lines
@@ -64,17 +80,17 @@ let%expect_test _ =
       ]
     |> parse
   in
-  print_s [%message (t : t) (p1 t : int)];
+  print_s [%message (t : t) (p1 t : int) (p2 t : int)];
   [%expect
     {|
     ((t
       ((antennas
         (((4 4) 0) ((5 2) 0) ((6 5) A) ((7 3) 0) ((8 1) 0) ((8 8) A) ((9 9) A)))
        (bounds ((min (0 0)) (max (11 11))))))
-     ("p1 t" 14))
+     ("p1 t" 14) ("p2 t" 34))
     |}]
 ;;
 
 let f1 s = parse s |> p1
-let f2 _ = 0
+let f2 s = parse s |> p2
 let run () = Run.run ~f1 ~f2 Day08_input.data
