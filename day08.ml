@@ -4,26 +4,23 @@ type t =
   }
 [@@deriving sexp]
 
+let extend_bounds t (x, y) =
+  let xmax, ymax = t.bounds.max in
+  { t with bounds = { t.bounds with max = Int.max xmax x, Int.max ymax y } }
+;;
+
 let parse s =
-  let lines = String.split_lines s in
-  let antennas =
-    List.foldi
-      lines
-      ~init:(Map.empty (module Vec))
-      ~f:(fun j acc s ->
-        String.foldi s ~init:acc ~f:(fun i acc c ->
-          let pos = i, j in
-          match c with
-          | '.' -> acc
-          | '0' .. '9' | 'A' .. 'Z' | 'a' .. 'z' -> Map.add_exn acc ~key:pos ~data:c
-          | _ -> raise_s [%message (c : char) (pos : Vec.t)]))
-  in
-  let bounds =
-    { Vec.min = Vec.zero
-    ; max = String.length (List.hd_exn lines) - 1, List.length lines - 1
-    }
-  in
-  { antennas; bounds }
+  Vec.parse_2d
+    s
+    ~init:
+      { antennas = Map.empty (module Vec); bounds = { min = Vec.zero; max = Vec.zero } }
+    ~f:(fun pos acc c ->
+      let acc = extend_bounds acc pos in
+      match c with
+      | '.' -> acc
+      | '0' .. '9' | 'A' .. 'Z' | 'a' .. 'z' ->
+        { acc with antennas = Map.add_exn acc.antennas ~key:pos ~data:c }
+      | _ -> raise_s [%message (c : char) (pos : Vec.t)])
 ;;
 
 let pairs t =

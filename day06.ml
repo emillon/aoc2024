@@ -33,21 +33,18 @@ let parse s =
     ; visited = Set.empty (module Pair)
     }
   in
-  String.split_lines s
-  |> List.foldi ~init ~f:(fun j acc row ->
-    String.foldi row ~init:acc ~f:(fun i acc c ->
-      let pos = i, j in
-      let tile, set_pos =
-        match c with
-        | '^' -> Empty, true
-        | '.' -> Empty, false
-        | '#' -> Full, false
-        | _ -> raise_s [%message "parse" (pos : Vec.t) (c : char)]
-      in
-      let tiles = Map.add_exn acc.tiles ~key:pos ~data:tile in
-      if set_pos
-      then { acc with tiles; pos; visited = Set.singleton (module Pair) { pos; dir } }
-      else { acc with tiles }))
+  Vec.parse_2d s ~init ~f:(fun pos acc c ->
+    let tile, set_pos =
+      match c with
+      | '^' -> Empty, true
+      | '.' -> Empty, false
+      | '#' -> Full, false
+      | _ -> raise_s [%message "parse" (pos : Vec.t) (c : char)]
+    in
+    let tiles = Map.add_exn acc.tiles ~key:pos ~data:tile in
+    if set_pos
+    then { acc with tiles; pos; visited = Set.singleton (module Pair) { pos; dir } }
+    else { acc with tiles })
 ;;
 
 type next_result =

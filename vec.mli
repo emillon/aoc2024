@@ -21,3 +21,4 @@ type bounding_box =
 
 val in_bounds : bounding_box -> t -> bool
 val bounding_box_map : (t, _, comparator_witness) Map.t -> bounding_box
+val parse_2d : string -> init:'a -> f:(t -> 'a -> char -> 'a) -> 'a

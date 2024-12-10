@@ -37,3 +37,11 @@ let bounding_box_map m =
       let ymax' = Int.max y ymax in
       { min = xmin', ymin'; max = xmax', ymax' })
 ;;
+
+let parse_2d s ~init ~f =
+  String.split_lines s
+  |> List.foldi ~init ~f:(fun j acc s ->
+    String.foldi s ~init:acc ~f:(fun i acc c ->
+      let pos = i, j in
+      f pos acc c))
+;;
