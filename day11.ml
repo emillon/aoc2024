@@ -1,5 +1,5 @@
 let try_split n =
-  let digits = Printf.ksprintf String.length "%d" n in
+  let digits = Algo.digits10 n in
   if digits % 2 = 0
   then (
     let d = Int.pow 10 (digits / 2) in

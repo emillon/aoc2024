@@ -129,3 +129,23 @@ let sole = function
   | [ x ] -> x
   | _ -> invalid_arg "sole"
 ;;
+
+let digits10 n =
+  if n = 0
+  then 1
+  else n |> Int.to_float |> Float.log10 |> Float.round_down |> Int.of_float |> Int.succ
+;;
+
+let%expect_test "digits10" =
+  let test n = print_s [%message (n : int) (digits10 n : int)] in
+  test 3;
+  [%expect {| ((n 3) ("digits10 n" 1)) |}];
+  test 9;
+  [%expect {| ((n 9) ("digits10 n" 1)) |}];
+  test 10;
+  [%expect {| ((n 10) ("digits10 n" 2)) |}];
+  test 1234;
+  [%expect {| ((n 1234) ("digits10 n" 4)) |}];
+  test 0;
+  [%expect {| ((n 0) ("digits10 n" 1)) |}]
+;;

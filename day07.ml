@@ -41,8 +41,11 @@ let%expect_test "f1" =
   [%expect {| 3749 |}]
 ;;
 
-(* TODO slow, use log10 to shift *)
-let join a b = Printf.sprintf "%d%d" b a |> Int.of_string
+let join a b =
+  let digits_a = Algo.digits10 a in
+  (b * Int.pow 10 digits_a) + a
+;;
+
 let f2 = solve [ ( * ); ( + ); join ]
 
 let%expect_test "f2" =

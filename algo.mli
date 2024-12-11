@@ -12,3 +12,4 @@ val lcm : int -> int -> int
 val egcd : int -> int -> int * int * int
 
 val sole : 'a list -> 'a
+val digits10 : int -> int
