@@ -19,6 +19,7 @@
           buildInputs = with pkgs.ocamlPackages; [
             angstrom
             cmdliner
+            core_kernel
             hex_encode
             ppx_jane
           ];
