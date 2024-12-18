@@ -1,3 +1,5 @@
 (executable
  (name input)
+ (preprocess
+  (pps ppx_jane))
  (libraries cmdliner hex_encode stdio))

@@ -6,4 +6,10 @@
  (name hex)
  (implementation
   (extension hex)
-  (preprocess (run input/input.exe decode %{input-file}))))
+  (preprocess (run input/input.exe decode %{input-file} --format hex))))
+
+(dialect
+ (name dots)
+ (implementation
+  (extension dots)
+  (preprocess (run input/input.exe decode %{input-file} --format dots))))
