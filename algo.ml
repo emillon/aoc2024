@@ -127,7 +127,8 @@ let lcm a b =
 
 let sole = function
   | [ x ] -> x
-  | _ -> invalid_arg "sole"
+  | [] -> invalid_arg "sole: []"
+  | _ :: _ -> invalid_arg "sole: _::_"
 ;;
 
 let digits10 n =
