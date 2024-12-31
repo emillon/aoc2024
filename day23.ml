@@ -1,64 +1,34 @@
-module Edge = struct
-  module T = struct
-    type t = string * string [@@deriving compare, hash, sexp]
-  end
-
-  include T
-  include Comparable.Make (T)
-end
-
-type t =
-  { nodes : Set.M(String).t
-  ; edges : Set.M(Edge).t
-  }
-[@@deriving sexp]
-
-let sorted (a, b) = if String.(a < b) then a, b else b, a
+module G = Graph.Persistent.Graph.Concrete (String)
 
 let parse s =
   let open Parsing_util in
   let open Angstrom in
-  let edge_list = parse_lines_using (both (word <* char '-') word) s in
-  let edges =
-    List.fold
-      edge_list
-      ~init:(Set.empty (module Edge))
-      ~f:(fun acc (a, b) ->
-        let a, b = sorted (a, b) in
-        Set.add acc (a, b))
-  in
-  let nodes =
-    Set.fold
-      edges
-      ~init:(Set.empty (module String))
-      ~f:(fun acc (a, b) -> Set.add (Set.add acc a) b)
-  in
-  { nodes; edges }
-;;
-
-let cliques3 { nodes; edges } =
-  let open List.Let_syntax in
-  let nodes_l = Set.to_list nodes in
-  let%bind a = nodes_l in
-  let%bind b = nodes_l in
-  let%bind () = Algo.guard (Set.mem edges (a, b)) in
-  let%bind c = nodes_l in
-  let%bind () = Algo.guard (Set.mem edges (b, c)) in
-  let%bind () = Algo.guard (Set.mem edges (a, c)) in
-  return (a, b, c)
+  parse_lines_using (both (word <* char '-') word) s
+  |> List.fold ~init:G.empty ~f:(fun acc (a, b) -> G.add_edge acc a b)
 ;;
 
 let is_t = String.is_prefix ~prefix:"t"
-let p1 t = List.count (cliques3 t) ~f:(fun (a, b, c) -> is_t a || is_t b || is_t c)
 
-module G = Graph.Persistent.Graph.Concrete (String)
+let cliques3 t =
+  let open List.Let_syntax in
+  let nodes_l = G.fold_vertex (fun a acc -> a :: acc) t [] in
+  let%bind a = nodes_l in
+  let%bind b = nodes_l in
+  let%bind () = Algo.guard String.(a < b) in
+  let%bind () = Algo.guard (G.mem_edge t a b) in
+  let%bind c = nodes_l in
+  let%bind () = Algo.guard String.(b < c) in
+  let%bind () = Algo.guard (G.mem_edge t b c) in
+  let%bind () = Algo.guard (G.mem_edge t a c) in
+  return [ a; b; c ]
+;;
+
+let p1 t = t |> cliques3 |> List.count ~f:(List.exists ~f:is_t)
+
 module Maximal_clique = Graph.Clique.Bron_Kerbosch (G)
-
-let to_g t = Set.fold t.edges ~init:G.empty ~f:(fun acc (a, b) -> G.add_edge acc a b)
 
 let p2 t =
   t
-  |> to_g
   |> Maximal_clique.maximalcliques
   |> List.max_elt ~compare:Stdlib.List.compare_lengths
   |> Option.value_exn
