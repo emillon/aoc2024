@@ -21,6 +21,7 @@
             cmdliner
             core_kernel
             hex_encode
+            ocamlgraph
             ppx_jane
           ];
         };
