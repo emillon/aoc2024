@@ -51,27 +51,14 @@ let cliques3 { nodes; edges } =
 let is_t = String.is_prefix ~prefix:"t"
 let p1 t = List.count (cliques3 t) ~f:(fun (a, b, c) -> is_t a || is_t b || is_t c)
 
-module G = struct
-  type nonrec t = t
-
-  module V = String
-
-  let succ t s =
-    Set.filter_map
-      (module String)
-      t.edges
-      ~f:(fun (a, b) ->
-        if String.equal a s then Some b else if String.equal b s then Some a else None)
-    |> Set.to_list
-  ;;
-
-  let fold_vertex f t init = Set.fold t.nodes ~init ~f:(fun acc s -> f s acc)
-end
-
+module G = Graph.Persistent.Graph.Concrete (String)
 module Maximal_clique = Graph.Clique.Bron_Kerbosch (G)
+
+let to_g t = Set.fold t.edges ~init:G.empty ~f:(fun acc (a, b) -> G.add_edge acc a b)
 
 let p2 t =
   t
+  |> to_g
   |> Maximal_clique.maximalcliques
   |> List.max_elt ~compare:Stdlib.List.compare_lengths
   |> Option.value_exn
