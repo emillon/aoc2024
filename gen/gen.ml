@@ -10,30 +10,17 @@ let () =
  (libraries aoc2024))
 
 (rule
- (action
-  (write-file run%02d.ml "let () = Aoc2024.Day%02d.run ()")))
+ (write-file run%02d.ml "let () = Aoc2024.Day%02d.run ()"))
 
 (rule
- (action
-  (with-stdout-to
-   day%02d_p1.txt.gen
-   (run ./run%02d.exe --part 1))))
+ (with-stdout-to
+  day%02d_p1.txt.gen
+  (run ./run%02d.exe --part 1)))
 
 (rule
- (alias runtest)
- (action
-  (diff ../day%02d_p1.txt day%02d_p1.txt.gen)))
-
-(rule
- (action
   (with-stdout-to
    day%02d_p2.txt.gen
-   (run ./run%02d.exe --part 2))))
-
-(rule
- (alias runtest)
- (action
-  (diff ../day%02d_p2.txt day%02d_p2.txt.gen)))
+   (run ./run%02d.exe --part 2)))
   |}
       i
       i
@@ -43,9 +30,33 @@ let () =
       i
       i
       i
+  done;
+  printf
+    {|
+  (rule
+   (alias runtest)
+   (action
+    (diff ../solutions.txt solutions.txt.gen)))
+
+  (rule
+   (with-stdout-to solutions.txt.gen
+    (progn
+     |};
+  for i = 1 to 25 do
+    printf
+      {|
+     (bash "echo -n 'Day %02d part 1: '")
+     (cat day%02d_p1.txt.gen)
+     (bash "echo -n 'Day %02d part 2: '")
+     (cat day%02d_p2.txt.gen)
+     |}
       i
       i
       i
       i
-  done
+  done;
+  printf
+    {|
+     )))
+      |}
 ;;
