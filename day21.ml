@@ -1,6 +1,3 @@
-(* XXX
-https://observablehq.com/@jwolondon/advent-of-code-2024-day-21
-*)
 type numeric =
   | N0
   | N1
@@ -92,7 +89,6 @@ let numeric_leg ~src ~dst =
 ;;
 
 let numeric l =
-  (* XXX dedup *)
   let last_dst, rev_legs =
     List.fold l ~init:(NA, []) ~f:(fun (src, rev_legs) dst ->
       let src' = dst in
@@ -150,47 +146,48 @@ end
 module Dmap = struct
   type t = int Map.M(Key).t [@@deriving sexp]
 
+  let empty = Map.empty (module Key)
+  let add_one = Map.update ~f:(fun vo -> vo |> Option.value ~default:0 |> Int.succ)
+  let add = Map.merge_skewed ~combine:(fun ~key:_ a b -> a + b)
+  let smult t n = Map.map t ~f:(fun x -> x * n)
+
   let of_dir_list l =
-    (* XXX dedup with directional ?*)
-    let _, final =
-      List.fold l ~init:(A, []) ~f:(fun (src, acc) dst -> dst, (src, dst) :: acc)
-    in
-    let keys = List.rev final in
-    (* XXX just one fold *)
-    List.fold
-      keys
-      ~init:(Map.empty (module Key))
-      ~f:(Map.update ~f:(fun vo -> vo |> Option.value ~default:0 |> Int.succ))
+    List.fold l ~init:(A, empty) ~f:(fun (src, acc) dst -> dst, add_one acc (src, dst))
+    |> snd
   ;;
 
   let length = Map.fold ~init:0 ~f:(fun ~key:_ ~data acc -> acc + data)
 
-  let expand_key = function
-    | U, U -> [ A, A ]
-    | D, D -> [ A, A ]
-    | U, R -> [ A, D; D, R; R, A ]
-    | U, A -> [ A, R; R, A ]
-    | D, A -> [ A, U; U, R; R, A ]
-    | L, A -> [ A, R; R, R; R, U; U, A ]
-    | R, A -> [ A, U; U, A ]
-    | A, U -> [ A, L; L, A ]
-    | A, D -> [ A, L; L, D; D, A ]
-    | A, L -> [ A, D; D, L; L, L; L, A ]
+  let expand_key =
+    let count = List.fold ~init:empty ~f:add_one in
+    function
+    | A, A | U, U | D, D | L, L | R, R -> count [ A, A ]
+    | U, R -> count [ A, D; D, R; R, A ]
+    | U, A | D, R | L, D -> count [ A, R; R, A ]
+    | D, A -> count [ A, U; U, R; R, A ]
+    | L, A -> count [ A, R; R, R; R, U; U, A ]
+    | R, A -> count [ A, U; U, A ]
+    | A, U | D, L -> count [ A, L; L, A ]
+    | A, D -> count [ A, L; L, D; D, A ]
+    | A, L -> count [ A, D; D, L; L, L; L, A ]
+    | R, U -> count [ A, L; L, U; U, A ]
+    | A, R -> count [ A, D; D, A ]
+    | L, U -> count [ A, R; R, U; U, A ]
+    | U, L -> count [ A, D; D, L; L, A ]
     | k -> raise_s [%message "expand_key" (k : Key.t)]
   ;;
 
-  let expand (t : t) : t =
-    Map.mapi t ~f:(fun ~key ~data ->
-      data
-      * List.fold (expand_key key) ~init:0 ~f:(fun acc other_key ->
-        acc + (Map.find t other_key |> Option.value ~default:0)))
+  let combine t ~f =
+    Map.fold t ~init:empty ~f:(fun ~key ~data acc -> add acc (smult (f key) data))
   ;;
+
+  let add_dir_panel t = combine t ~f:expand_key
 
   let%expect_test _ =
     let l = numeric [ N0; N2; N9; NA ] in
     let d1 = of_dir_list l in
-    let d2 = expand d1 in
-    let d3 = expand d2 in
+    let d2 = add_dir_panel d1 in
+    let d3 = add_dir_panel d2 in
     print_s
       [%message
         (l : dir list)
@@ -208,19 +205,20 @@ module Dmap = struct
          ((A U) 2) ((A D) 1) ((A L) 1)))
        ("length d1" 12)
        (d2
-        (((U U) 0) ((U R) 2) ((U A) 1) ((D D) 0) ((D A) 4) ((L A) 1) ((R A) 3)
-         ((A U) 4) ((A D) 2) ((A L) 2)))
-       ("length d2" 19)
+        (((U R) 1) ((U A) 2) ((D L) 1) ((D R) 1) ((D A) 1) ((L D) 1) ((L L) 1)
+         ((L A) 3) ((R U) 1) ((R R) 1) ((R A) 3) ((A U) 2) ((A D) 2) ((A L) 3)
+         ((A R) 2) ((A A) 3)))
+       ("length d2" 28)
        (d3
-        (((U U) 0) ((U R) 10) ((U A) 3) ((D D) 0) ((D A) 36) ((L A) 1) ((R A) 15)
-         ((A U) 12) ((A D) 12) ((A L) 6)))
-       ("length d3" 95))
+        (((U R) 1) ((U A) 7) ((D L) 3) ((D R) 1) ((D A) 4) ((L U) 1) ((L D) 2)
+         ((L L) 3) ((L A) 6) ((R U) 3) ((R R) 3) ((R A) 6) ((A U) 4) ((A D) 6)
+         ((A L) 6) ((A R) 7) ((A A) 5)))
+       ("length d3" 68))
       |}]
   ;;
 end
 
 let directional l =
-  (* XXX dedup with numeric *)
   let last_dst, rev_legs =
     List.fold l ~init:(A, []) ~f:(fun (src, rev_legs) dst ->
       let src' = dst in
@@ -316,5 +314,19 @@ let%expect_test _ =
 ;;
 
 let f1 s = parse s |> p1
-let f2 _ = 0
+
+let f2 s =
+  let l = parse s in
+  List.map l ~f:(fun n ->
+    let len =
+      numeric n
+      |> Dmap.of_dir_list
+      |> Fn.apply_n_times ~n:25 Dmap.add_dir_panel
+      |> Dmap.length
+    in
+    let value = numeric_value n in
+    len * value)
+  |> Algo.sum
+;;
+
 let run () = Run.run ~f1 ~f2 Day21_input.data
