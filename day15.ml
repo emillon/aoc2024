@@ -1,12 +1,28 @@
 type tile =
   | Wall
   | Box
+  | BoxL
+  | BoxR
 [@@deriving sexp]
+
+type dir =
+  | U
+  | D
+  | L
+  | R
+[@@deriving sexp]
+
+let dir_vec = function
+  | U -> 0, -1
+  | D -> 0, 1
+  | L -> -1, 0
+  | R -> 1, 0
+;;
 
 type t =
   { tiles : tile Map.M(Vec).t
   ; pos : Vec.t
-  ; moves : Vec.t list
+  ; moves : dir list
   }
 [@@deriving sexp]
 
@@ -19,6 +35,8 @@ let parse_tiles l =
            match c with
            | '#' -> Map.add_exn acc_map ~key:pos ~data:Wall, acc_pos
            | 'O' -> Map.add_exn acc_map ~key:pos ~data:Box, acc_pos
+           | '[' -> Map.add_exn acc_map ~key:pos ~data:BoxL, acc_pos
+           | ']' -> Map.add_exn acc_map ~key:pos ~data:BoxR, acc_pos
            | '@' ->
              assert (Option.is_none acc_pos);
              acc_map, Some pos
@@ -32,12 +50,22 @@ let parse_moves l =
   String.concat_lines l
   |> String.to_list
   |> List.filter_map ~f:(function
-    | '^' -> Some (0, -1)
-    | 'v' -> Some (0, 1)
-    | '<' -> Some (-1, 0)
-    | '>' -> Some (1, 0)
+    | '^' -> Some U
+    | 'v' -> Some D
+    | '<' -> Some L
+    | '>' -> Some R
     | '\n' -> None
     | c -> raise_s [%message "parse_moves" (c : char)])
+;;
+
+let expand =
+  String.concat_map ~f:(function
+    | '#' -> "##"
+    | '.' -> ".."
+    | 'O' -> "[]"
+    | '@' -> "@."
+    | ('\n' | '^' | 'v' | '<' | '>') as c -> String.of_char c
+    | c -> raise_s [%message "expand" (c : char)])
 ;;
 
 let parse s =
@@ -52,36 +80,86 @@ let parse s =
   { tiles; pos; moves = parse_moves move_lines }
 ;;
 
-let rec push_box tiles pos dir =
-  let pos' = Vec.add pos dir in
-  match Map.find tiles pos' with
-  | None -> Some (Map.add_exn tiles ~key:pos' ~data:Box)
-  | Some Wall -> None
-  | Some Box -> push_box tiles pos' dir
+let move_all t l dir =
+  let open Option.Let_syntax in
+  let rec move_one src =
+    let dir_vec = dir_vec dir in
+    let dst = Vec.add src dir_vec in
+    match Map.find t.tiles dst, dir with
+    | None, _ -> Some (Set.singleton (module Vec) src)
+    | Some Wall, _ -> None
+    | Some Box, _ | Some BoxL, L | Some BoxR, R ->
+      let%map m = move_one dst in
+      Set.add m src
+    | Some BoxL, (U | D | R) -> move_3 src dst (Vec.add dst (1, 0))
+    | Some BoxR, (U | D | L) -> move_3 src dst (Vec.add dst (-1, 0))
+  and move_3 src s1 s2 =
+    let%map m1 = move_one s1
+    and m2 = move_one s2 in
+    Set.union m1 (Set.add m2 src)
+  in
+  List.fold
+    l
+    ~init:(Some (Set.empty (module Vec)))
+    ~f:(fun acc_o pos ->
+      let open Option.Let_syntax in
+      let%map acc = acc_o
+      and l = move_one pos in
+      Set.union l acc)
 ;;
 
-let move t dir =
-  let pos = Vec.add t.pos dir in
+let order set dir =
+  let x = Comparable.lift Int.compare ~f:fst in
+  let y = Comparable.lift Int.compare ~f:snd in
+  let ascending cmp = cmp in
+  let descending cmp = Comparable.reverse cmp in
+  let compare =
+    match dir with
+    | R -> ascending x
+    | D -> ascending y
+    | L -> descending x
+    | U -> descending y
+  in
+  Set.to_list set |> List.sort ~compare
+;;
+
+let try_move t dir =
+  let dir_vec = dir_vec dir in
+  let pos = Vec.add t.pos dir_vec in
+  let move l =
+    match move_all t l dir with
+    | None -> None
+    | Some set ->
+      let tiles =
+        order set dir
+        |> List.fold_right ~init:t.tiles ~f:(fun src acc ->
+          let data = Map.find_exn acc src in
+          let dst = Vec.add src dir_vec in
+          let acc = Map.add_exn acc ~key:dst ~data in
+          Map.remove acc src)
+      in
+      Some { t with pos; tiles }
+  in
   match Map.find t.tiles pos with
-  | None -> { t with pos }
-  | Some Wall -> t
-  | Some Box ->
-    (let open Option.Let_syntax in
-     let%map tiles = push_box t.tiles pos dir in
-     let tiles = Map.remove tiles pos in
-     { t with pos; tiles })
-    |> Option.value ~default:t
+  | None -> Some { t with pos }
+  | Some Wall -> None
+  | Some Box -> move [ pos ]
+  | Some BoxL -> move [ pos; Vec.add pos (1, 0) ]
+  | Some BoxR -> move [ pos; Vec.add pos (-1, 0) ]
 ;;
 
+let move t dir = try_move t dir |> Option.value ~default:t
 let gps (x, y) = (100 * y) + x
 
 let p1 t =
   let final = List.fold t.moves ~init:t ~f:move in
   Map.fold final.tiles ~init:0 ~f:(fun ~key ~data acc ->
     match data with
-    | Box -> acc + gps key
-    | Wall -> acc)
+    | Box | BoxL -> acc + gps key
+    | Wall | BoxR -> acc)
 ;;
+
+let parse2 s = s |> expand |> parse
 
 let%expect_test _ =
   let t =
@@ -112,10 +190,7 @@ let%expect_test _ =
          ((5 7) Wall) ((6 0) Wall) ((6 7) Wall) ((7 0) Wall) ((7 1) Wall)
          ((7 2) Wall) ((7 3) Wall) ((7 4) Wall) ((7 5) Wall) ((7 6) Wall)
          ((7 7) Wall)))
-       (pos (2 2))
-       (moves
-        ((-1 0) (0 -1) (0 -1) (1 0) (1 0) (1 0) (0 1) (0 1) (-1 0) (0 1)
-         (1 0) (1 0) (0 1) (-1 0) (-1 0)))))
+       (pos (2 2)) (moves (L U U R R R D D L D R R D L L))))
      ("p1 t" 2028))
     |}];
   let t2 =
@@ -148,6 +223,127 @@ let%expect_test _ =
   [%expect {| ("p1 t2" 10092) |}]
 ;;
 
+let display t =
+  let { Vec.min = xmin, ymin; max = xmax, ymax } = Vec.bounding_box_map t.tiles in
+  for y = ymin to ymax do
+    for x = xmin to xmax do
+      let pos = x, y in
+      let c =
+        match Map.find t.tiles pos with
+        | _ when Vec.equal pos t.pos -> '@'
+        | Some Wall -> '#'
+        | Some Box -> 'O'
+        | Some BoxL -> '['
+        | Some BoxR -> ']'
+        | None -> '.'
+      in
+      printf "%c" c
+    done;
+    printf "\n"
+  done
+;;
+
+let%expect_test _ =
+  let r =
+    ref
+      (parse2
+         (String.concat_lines
+            [ "#######"
+            ; "#...#.#"
+            ; "#.....#"
+            ; "#..OO@#"
+            ; "#..O..#"
+            ; "#.....#"
+            ; "#######"
+            ; ""
+            ; "<vv<<^^<<^^"
+            ]))
+  in
+  let q = Queue.of_list !r.moves in
+  let go () =
+    let m = Queue.dequeue_exn q in
+    r := move !r m;
+    display !r
+  in
+  display !r;
+  [%expect
+    {|
+    ##############
+    ##......##..##
+    ##..........##
+    ##....[][]@.##
+    ##....[]....##
+    ##..........##
+    ##############
+    |}];
+  go ();
+  [%expect
+    {|
+    ##############
+    ##......##..##
+    ##..........##
+    ##...[][]@..##
+    ##....[]....##
+    ##..........##
+    ##############
+    |}];
+  go ();
+  [%expect
+    {|
+    ##############
+    ##......##..##
+    ##..........##
+    ##...[][]...##
+    ##....[].@..##
+    ##..........##
+    ##############
+    |}];
+  go ();
+  [%expect
+    {|
+    ##############
+    ##......##..##
+    ##..........##
+    ##...[][]...##
+    ##....[]....##
+    ##.......@..##
+    ##############
+        |}];
+  go ();
+  [%expect
+    {|
+    ##############
+    ##......##..##
+    ##..........##
+    ##...[][]...##
+    ##....[]....##
+    ##......@...##
+    ##############
+    |}];
+  go ();
+  [%expect
+    {|
+    ##############
+    ##......##..##
+    ##..........##
+    ##...[][]...##
+    ##....[]....##
+    ##.....@....##
+    ##############
+    |}];
+  go ();
+  [%expect
+    {|
+    ##############
+    ##......##..##
+    ##...[][]...##
+    ##....[]....##
+    ##.....@....##
+    ##..........##
+    ##############
+    |}]
+;;
+
 let f1 s = parse s |> p1
-let f2 _ = 0
+let f2 s = parse2 s |> p1
 let run () = Run.run ~f1 ~f2 Day15_input.data
