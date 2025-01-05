@@ -59,7 +59,97 @@ let%expect_test "n200" =
     |}]
 ;;
 
+module Deltas = struct
+  module T = struct
+    type t = int * int * int * int [@@deriving compare, sexp]
+  end
+
+  include T
+  include Comparable.Make (T)
+
+  let shift (_d0, d1, d2, d3) d = d1, d2, d3, d
+end
+
+type state =
+  | L0
+  | L1 of int
+  | L2 of int * int
+  | L3 of int * int * int
+  | D of Deltas.t * int Map.M(Deltas).t
+[@@deriving sexp]
+
+let best_prices ~start ~n =
+  let rec go i secret st =
+    if i = 0
+    then (
+      match st with
+      | D (_, m) -> m
+      | _ -> raise_s [%message "final" (st : state)])
+    else (
+      let secret' = next secret in
+      let price = secret % 10 in
+      let price' = secret' % 10 in
+      let d = price' - price in
+      let st' =
+        match st with
+        | L0 -> L1 d
+        | L1 d0 -> L2 (d0, d)
+        | L2 (d0, d1) -> L3 (d0, d1, d)
+        | L3 (d0, d1, d2) -> D ((d0, d1, d2, d), Map.empty (module Deltas))
+        | D (key, m) ->
+          let m' =
+            Map.update m key ~f:(function
+              | None -> price
+              | Some prev_max -> Int.max d prev_max)
+          in
+          D (Deltas.shift key d, m')
+      in
+      go (i - 1) secret' st')
+  in
+  go n start L0
+;;
+
+let%expect_test "best_prices" =
+  [ 1; 2; 3; 2024 ]
+  |> List.iter ~f:(fun start ->
+    let n = 2000 in
+    let k = -2, 1, -1, 3 in
+    let best = best_prices ~start ~n in
+    let best_for_k = Map.find best k in
+    print_s [%message (start : int) (best_for_k : int option)]);
+  [%expect
+    {|
+    ((start 1) (best_for_k (7)))
+    ((start 2) (best_for_k (7)))
+    ((start 3) (best_for_k ()))
+    ((start 2024) (best_for_k (9)))
+    |}]
+;;
+
+let best_key l ~n =
+  let r =
+    List.fold
+      l
+      ~init:(Map.empty (module Deltas))
+      ~f:(fun acc start ->
+        let best = best_prices ~start ~n in
+        Map.merge_skewed acc best ~combine:(fun ~key:_ a b -> a + b))
+  in
+  r
+  |> Map.to_alist
+  |> List.max_elt ~compare:(Comparable.lift Int.compare ~f:snd)
+  |> Option.value_exn
+;;
+
+let%expect_test _ =
+  let l = [ 1; 2; 3; 2024 ] in
+  let n = 2000 in
+  let best = best_key l ~n in
+  print_s [%message (best : Deltas.t * int)];
+  [%expect {| (best ((-2 1 -1 3) 23)) |}]
+;;
+
 let parse s = String.split_lines s |> List.map ~f:Int.of_string
 let f1 s = parse s |> List.map ~f:n2000 |> Algo.sum
-let f2 _ = 0
+let f2 s = parse s |> best_key ~n:2000 |> snd
 let run () = Run.run ~f1 ~f2 Day22_input.data
