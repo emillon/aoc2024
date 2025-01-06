@@ -190,7 +190,13 @@ let sinks eqns =
   Set.diff all_nodes inner_nodes
 ;;
 
-let next_outputs t x_i y_i o =
+type adder =
+  { c_out : string
+  ; s : string
+  ; nodes : string list
+  }
+
+let isolate_adder t x_i y_i o =
   let prev_outputs =
     match o with
     | None -> Set.empty (module String)
@@ -202,9 +208,11 @@ let next_outputs t x_i y_i o =
   in
   let r = Set.diff (sinks t'.eqns) prev_outputs |> Set.to_list in
   match r with
-  | [ a'; b' ] -> Some (a', b')
+  | [ a'; b' ] ->
+    let c_out, s = if String.is_prefix a' ~prefix:"z" then b', a' else a', b' in
+    Some { c_out; s; nodes = Map.keys t'.eqns }
   | [] -> None
-  | l -> raise_s [%message "next_outputs" (l : string list)]
+  | l -> raise_s [%message "isolate_adder" (l : string list)]
 ;;
 
 let rename_sym ~rename n _ =
@@ -220,37 +228,29 @@ let partial_eval t roots rename =
       { t with values = List.map roots ~f:(fun s -> s, false) }
       ~f:(fun s -> List.mem roots s ~equal:String.equal)
   in
-  let m = eval t eval_sym (rename_sym ~rename) in
-  m
+  eval t eval_sym (rename_sym ~rename)
 ;;
-
-type match_error =
-  | Op_is_xor
-  | Is_xor
-  | Is_and
-  | Is_or
-  | Op_is_and
-[@@deriving sexp]
 
 let ok_out = function
   | S_op
       ( OR
       , S_op (AND, S_op (XOR, S_sym "x", S_sym "y"), S_sym "c_in")
-      , S_op (AND, S_sym "x", S_sym "y") ) -> Ok ()
-  | S_op (OR, _, S_op (XOR, _, _)) -> Error Op_is_xor
-  | S_op (XOR, _, _) -> Error Is_xor
+      , S_op (AND, S_sym "x", S_sym "y") ) -> true
+  | S_op (OR, _, S_op (XOR, _, _)) -> false
+  | S_op (XOR, _, _) -> false
+  | S_op (AND, _, _) -> false
   | s -> raise_s [%message "ok_out" (s : sym)]
 ;;
 
 let ok_s = function
-  | S_op (XOR, S_op (XOR, S_sym "x", S_sym "y"), S_sym "c_in") -> Ok ()
-  | S_op (AND, _, _) -> Error Is_and
-  | S_op (XOR, S_op (AND, _, _), _) -> Error Op_is_and
-  | S_op (OR, _, _) -> Error Is_or
+  | S_op (XOR, S_op (XOR, S_sym "x", S_sym "y"), S_sym "c_in") -> true
+  | S_op (AND, _, _) -> false
+  | S_op (XOR, S_op (AND, _, _), _) -> false
+  | S_op (OR, _, _) -> false
   | s -> raise_s [%message "ok_s" (s : sym)]
 ;;
 
-let detect_full_adder t ~x ~y ~c_in ~outputs:(c_out, s) =
+let is_full_adder t ~x ~y ~c_in ~c_out ~s =
   let m =
     partial_eval t [ x; y; c_in ] (fun s ->
       match () with
@@ -259,20 +259,9 @@ let detect_full_adder t ~x ~y ~c_in ~outputs:(c_out, s) =
       | _ when String.equal s c_in -> Some "c_in"
       | _ -> None)
   in
-  match ok_out (Map.find_exn m c_out), ok_s (Map.find_exn m s) with
-  | Ok (), Ok () -> ()
-  | Error e1, Error e2 ->
-    print_s
-      [%message
-        "detect_full_adder: c_out"
-          ~x
-          ~y
-          ~c_in
-          ~c_out
-          ~s
-          (e1 : match_error)
-          (e2 : match_error)]
-  | Ok _, Error _ | Error _, Ok _ -> assert false
+  match Map.find m c_out with
+  | None -> false
+  | Some sym_c_out -> ok_out sym_c_out && ok_s (Map.find_exn m s)
 ;;
 
 let swap a b t =
@@ -289,38 +278,45 @@ let swap a b t =
   { t with eqns }
 ;;
 
-let swap_pair (a, b) = b, a
+let all_swaps l =
+  let open List.Let_syntax in
+  let%bind a = l in
+  let%bind b = l in
+  let%bind () = Algo.guard String.(a < b) in
+  return (a, b)
+;;
+
+let find_swap t nodes ~x ~y ~c_in ~c_out ~s =
+  all_swaps nodes
+  |> List.find_exn ~f:(fun (a, b) ->
+    let t' = swap a b t in
+    is_full_adder t' ~x ~y ~c_in ~c_out ~s)
+;;
 
 let f2 s =
   let t = parse s in
-  let swaps = [ "z08", "thm"; "wrm", "wss"; "z22", "hwq"; "gbs", "z29" ] in
-  let t = List.fold swaps ~init:t ~f:(fun acc (a, b) -> swap a b acc) in
-  let o = ref None in
-  let i = ref 0 in
-  let exception Done in
-  try
-    while true do
-      let x = Printf.sprintf "x%02d" !i in
-      let y = Printf.sprintf "y%02d" !i in
-      match next_outputs t x y !o with
-      | None -> raise Done
-      | Some o' ->
-        (match !o with
-         | None -> ()
-         | Some (c_in, _) ->
-           let outputs =
-             if String.is_prefix (fst o') ~prefix:"z" then swap_pair o' else o'
-           in
-           detect_full_adder t ~x ~y ~c_in ~outputs);
-        o := Some o';
-        Int.incr i
-    done
-  with
-  | Done ->
-    List.map swaps ~f:(fun (a, b) -> Set.of_list (module String) [ a; b ])
-    |> Set.union_list (module String)
-    |> Set.to_list
-    |> String.concat ~sep:","
+  let swaps =
+    let rec go i o acc =
+      let x = Printf.sprintf "x%02d" i in
+      let y = Printf.sprintf "y%02d" i in
+      match isolate_adder t x y o with
+      | None -> acc
+      | Some { c_out; s; nodes } ->
+        let acc' =
+          match o with
+          | None -> acc
+          | Some (c_in, _) ->
+            if is_full_adder t ~x ~y ~c_in ~c_out ~s
+            then acc
+            else (
+              let a, b = find_swap t nodes ~x ~y ~c_in ~c_out ~s in
+              Set.add (Set.add acc a) b)
+        in
+        go (i + 1) (Some (c_out, s)) acc'
+    in
+    go 0 None (Set.empty (module String))
+  in
+  swaps |> Set.to_list |> String.concat ~sep:","
 ;;
 
 let run () = Run.run_string ~f1 ~f2 Day24_input.data
