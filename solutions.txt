@@ -45,6 +45,6 @@ Day 22 part 2: 1986
 Day 23 part 1: 1419
 Day 23 part 2: af,aq,ck,ee,fb,it,kg,of,ol,rt,sc,vk,zh
 Day 24 part 1: 53258032898766
-Day 24 part 2: 0
+Day 24 part 2: gbs,hwq,thm,wrm,wss,z08,z22,z29
 Day 25 part 1: 3317
 Day 25 part 2: 0

@@ -2,9 +2,9 @@ type op =
   | AND
   | OR
   | XOR
-[@@deriving sexp]
+[@@deriving compare, equal, sexp]
 
-let eval_op = function
+let eval_op_bool = function
   | AND -> ( && )
   | OR -> ( || )
   | XOR -> Bool.( <> )
@@ -15,23 +15,32 @@ type expr =
   ; op : op
   ; src2 : string
   }
-[@@deriving sexp]
+[@@deriving equal, sexp]
 
 type t =
   { values : (string * bool) list
   ; eqns : expr Map.M(String).t
   }
-[@@deriving sexp]
+[@@deriving equal, sexp]
 
-let eval { values; eqns } =
-  let r = ref (Map.of_alist_exn (module String) values) in
+let eval { values; eqns } eval_op literal =
+  let r =
+    values
+    |> List.map ~f:(fun (n, b) -> n, literal n b)
+    |> Map.of_alist_exn (module String)
+    |> ref
+  in
   let q = Queue.of_list (Map.keys eqns) in
   while not (Queue.is_empty q) do
     let signal = Queue.dequeue_exn q in
     if Map.mem !r signal
     then ()
     else (
-      let { src1; op; src2 } = Map.find_exn eqns signal in
+      let { src1; op; src2 } =
+        Map.find eqns signal
+        |> Option.value_or_thunk ~default:(fun () ->
+          raise_s [%message "eval: not found" (signal : string)])
+      in
       match Map.find !r src1, Map.find !r src2 with
       | Some v1, Some v2 ->
         let v = eval_op op v1 v2 in
@@ -71,7 +80,7 @@ let parse =
 let of_bools l = l |> List.fold ~init:0 ~f:(fun acc b -> (2 * acc) + Bool.to_int b)
 
 let p1 t =
-  eval t
+  eval t eval_op_bool (fun _ b -> b)
   |> Map.filter_keys ~f:(String.is_prefix ~prefix:"z")
   |> Map.to_alist ~key_order:`Decreasing
   |> List.map ~f:snd
@@ -131,63 +140,187 @@ let%expect_test _ =
          ; "tnw OR pbm -> gnj"
          ])
   in
-  print_s [%message (t : t) (eval t : bool Map.M(String).t) (p1 t : int)];
-  [%expect
-    {|
-    ((t
-      ((values
-        ((x00 true) (x01 false) (x02 true) (x03 true) (x04 false) (y00 true)
-         (y01 true) (y02 true) (y03 true) (y04 true)))
-       (eqns
-        ((bfw ((src1 vdt) (op OR) (src2 tnw)))
-         (bqk ((src1 ffh) (op OR) (src2 nrd)))
-         (djm ((src1 y00) (op AND) (src2 y03)))
-         (ffh ((src1 x03) (op XOR) (src2 y03)))
-         (fgs ((src1 y04) (op OR) (src2 y02)))
-         (frj ((src1 tnw) (op OR) (src2 fst)))
-         (fst ((src1 x00) (op OR) (src2 x03)))
-         (gnj ((src1 tnw) (op OR) (src2 pbm)))
-         (hwm ((src1 nrd) (op AND) (src2 vdt)))
-         (kjc ((src1 x04) (op AND) (src2 y00)))
-         (kpj ((src1 pbm) (op OR) (src2 djm)))
-         (kwq ((src1 ntg) (op OR) (src2 kjc)))
-         (mjb ((src1 ntg) (op XOR) (src2 fgs)))
-         (nrd ((src1 y03) (op OR) (src2 x01)))
-         (ntg ((src1 x00) (op XOR) (src2 y04)))
-         (pbm ((src1 y01) (op AND) (src2 x02)))
-         (psh ((src1 y03) (op OR) (src2 y00)))
-         (qhw ((src1 djm) (op OR) (src2 pbm)))
-         (rvg ((src1 kjc) (op AND) (src2 fst)))
-         (tgd ((src1 psh) (op XOR) (src2 fgs)))
-         (tnw ((src1 y02) (op OR) (src2 x01)))
-         (vdt ((src1 x03) (op OR) (src2 x00)))
-         (wpb ((src1 nrd) (op XOR) (src2 fgs)))
-         (z00 ((src1 bfw) (op XOR) (src2 mjb)))
-         (z01 ((src1 tgd) (op XOR) (src2 rvg)))
-         (z02 ((src1 gnj) (op AND) (src2 wpb)))
-         (z03 ((src1 hwm) (op AND) (src2 bqk)))
-         (z04 ((src1 frj) (op XOR) (src2 qhw)))
-         (z05 ((src1 kwq) (op OR) (src2 kpj)))
-         (z06 ((src1 bfw) (op OR) (src2 bqk)))
-         (z07 ((src1 bqk) (op OR) (src2 frj)))
-         (z08 ((src1 bqk) (op OR) (src2 frj)))
-         (z09 ((src1 qhw) (op XOR) (src2 tgd)))
-         (z10 ((src1 bfw) (op AND) (src2 frj)))
-         (z11 ((src1 gnj) (op AND) (src2 tgd)))
-         (z12 ((src1 tgd) (op XOR) (src2 rvg)))))))
-     ("eval t"
-      ((bfw true) (bqk true) (djm true) (ffh false) (fgs true) (frj true)
-       (fst true) (gnj true) (hwm true) (kjc false) (kpj true) (kwq false)
-       (mjb true) (nrd true) (ntg false) (pbm true) (psh true) (qhw true)
-       (rvg false) (tgd false) (tnw true) (vdt true) (wpb false) (x00 true)
-       (x01 false) (x02 true) (x03 true) (x04 false) (y00 true) (y01 true)
-       (y02 true) (y03 true) (y04 true) (z00 false) (z01 false) (z02 false)
-       (z03 true) (z04 false) (z05 true) (z06 true) (z07 true) (z08 true)
-       (z09 true) (z10 true) (z11 false) (z12 false)))
-     ("p1 t" 2024))
-    |}]
+  print_s [%message (p1 t : int)];
+  [%expect {| ("p1 t" 2024) |}]
 ;;
 
-let f1 s = parse s |> p1
-let f2 _ = 0
-let run () = Run.run ~f1 ~f2 Day24_input.data
+let f1 s = parse s |> p1 |> Int.to_string
+
+type sym =
+  | S_op of op * sym * sym
+  | S_sym of string
+[@@deriving compare]
+
+let rec sexp_of_sym = function
+  | S_op (op, a, b) -> Sexp.List [ [%sexp_of: op] op; sexp_of_sym a; sexp_of_sym b ]
+  | S_sym s -> [%sexp_of: string] s
+;;
+
+let eval_sym op a b =
+  let a', b' = if [%compare: sym] a b < 0 then a, b else b, a in
+  S_op (op, a', b')
+;;
+
+let prune ~is_root t =
+  let rec go s =
+    let s' =
+      Map.fold t.eqns ~init:s ~f:(fun ~key:dst ~data:{ src1; src2; op = _ } acc ->
+        if is_root dst || (Set.mem s src1 && Set.mem s src2) then Set.add acc dst else acc)
+    in
+    if Set.equal s s' then s else go s'
+  in
+  let alive = go (List.map ~f:fst t.values |> Set.of_list (module String)) in
+  let eqns = Map.filter_keys t.eqns ~f:(Set.mem alive) in
+  { t with eqns }
+;;
+
+let filter t ~f =
+  let values = List.filter t.values ~f:(fun (s, _) -> f s) in
+  prune ~is_root:f { t with values }
+;;
+
+let sinks eqns =
+  let inner_nodes =
+    Map.fold
+      eqns
+      ~init:(Set.empty (module String))
+      ~f:(fun ~key:_ ~data:{ src1; src2; op = _ } acc -> Set.add (Set.add acc src1) src2)
+  in
+  let all_nodes = Map.keys eqns |> Set.of_list (module String) in
+  Set.diff all_nodes inner_nodes
+;;
+
+let next_outputs t x_i y_i o =
+  let prev_outputs =
+    match o with
+    | None -> Set.empty (module String)
+    | Some (a, b) -> Set.of_list (module String) [ a; b ]
+  in
+  let t' =
+    filter t ~f:(fun s ->
+      String.equal s x_i || String.equal s y_i || Set.mem prev_outputs s)
+  in
+  let r = Set.diff (sinks t'.eqns) prev_outputs |> Set.to_list in
+  match r with
+  | [ a'; b' ] -> Some (a', b')
+  | [] -> None
+  | l -> raise_s [%message "next_outputs" (l : string list)]
+;;
+
+let rename_sym ~rename n _ =
+  S_sym
+    (match rename n with
+     | Some n' -> n'
+     | None -> n)
+;;
+
+let partial_eval t roots rename =
+  let t =
+    filter
+      { t with values = List.map roots ~f:(fun s -> s, false) }
+      ~f:(fun s -> List.mem roots s ~equal:String.equal)
+  in
+  let m = eval t eval_sym (rename_sym ~rename) in
+  m
+;;
+
+type match_error =
+  | Op_is_xor
+  | Is_xor
+  | Is_and
+  | Is_or
+  | Op_is_and
+[@@deriving sexp]
+
+let ok_out = function
+  | S_op
+      ( OR
+      , S_op (AND, S_op (XOR, S_sym "x", S_sym "y"), S_sym "c_in")
+      , S_op (AND, S_sym "x", S_sym "y") ) -> Ok ()
+  | S_op (OR, _, S_op (XOR, _, _)) -> Error Op_is_xor
+  | S_op (XOR, _, _) -> Error Is_xor
+  | s -> raise_s [%message "ok_out" (s : sym)]
+;;
+
+let ok_s = function
+  | S_op (XOR, S_op (XOR, S_sym "x", S_sym "y"), S_sym "c_in") -> Ok ()
+  | S_op (AND, _, _) -> Error Is_and
+  | S_op (XOR, S_op (AND, _, _), _) -> Error Op_is_and
+  | S_op (OR, _, _) -> Error Is_or
+  | s -> raise_s [%message "ok_s" (s : sym)]
+;;
+
+let detect_full_adder t ~x ~y ~c_in ~outputs:(c_out, s) =
+  let m =
+    partial_eval t [ x; y; c_in ] (fun s ->
+      match () with
+      | _ when String.equal s x -> Some "x"
+      | _ when String.equal s y -> Some "y"
+      | _ when String.equal s c_in -> Some "c_in"
+      | _ -> None)
+  in
+  match ok_out (Map.find_exn m c_out), ok_s (Map.find_exn m s) with
+  | Ok (), Ok () -> ()
+  | Error e1, Error e2 ->
+    print_s
+      [%message
+        "detect_full_adder: c_out"
+          ~x
+          ~y
+          ~c_in
+          ~c_out
+          ~s
+          (e1 : match_error)
+          (e2 : match_error)]
+  | Ok _, Error _ | Error _, Ok _ -> assert false
+;;
+
+let swap a b t =
+  let eqns =
+    Map.map_keys_exn
+      (module String)
+      t.eqns
+      ~f:(fun s ->
+        match () with
+        | _ when String.equal s a -> b
+        | _ when String.equal s b -> a
+        | _ -> s)
+  in
+  { t with eqns }
+;;
+
+let swap_pair (a, b) = b, a
+
+let f2 s =
+  let t = parse s in
+  let swaps = [ "z08", "thm"; "wrm", "wss"; "z22", "hwq"; "gbs", "z29" ] in
+  let t = List.fold swaps ~init:t ~f:(fun acc (a, b) -> swap a b acc) in
+  let o = ref None in
+  let i = ref 0 in
+  let exception Done in
+  try
+    while true do
+      let x = Printf.sprintf "x%02d" !i in
+      let y = Printf.sprintf "y%02d" !i in
+      match next_outputs t x y !o with
+      | None -> raise Done
+      | Some o' ->
+        (match !o with
+         | None -> ()
+         | Some (c_in, _) ->
+           let outputs =
+             if String.is_prefix (fst o') ~prefix:"z" then swap_pair o' else o'
+           in
+           detect_full_adder t ~x ~y ~c_in ~outputs);
+        o := Some o';
+        Int.incr i
+    done
+  with
+  | Done ->
+    List.map swaps ~f:(fun (a, b) -> Set.of_list (module String) [ a; b ])
+    |> Set.union_list (module String)
+    |> Set.to_list
+    |> String.concat ~sep:","
+;;
+
+let run () = Run.run_string ~f1 ~f2 Day24_input.data
