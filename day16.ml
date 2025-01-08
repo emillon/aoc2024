@@ -68,52 +68,94 @@ let p1 t0 =
   | Found n -> n
 ;;
 
-let f1 s = parse s |> p1
+let snd3 (_, b, _) = b
 
-let%expect_test _ =
-  let e1 =
-    String.concat_lines
-      [ "###############"
-      ; "#.......#....E#"
-      ; "#.#.###.#.###.#"
-      ; "#.....#.#...#.#"
-      ; "#.###.#####.#.#"
-      ; "#.#.#.......#.#"
-      ; "#.#.#####.###.#"
-      ; "#...........#.#"
-      ; "###.#.#####.#.#"
-      ; "#...#.....#.#.#"
-      ; "#.#.#.###.#.#.#"
-      ; "#.....#...#.#.#"
-      ; "#.###.#.#.#.#.#"
-      ; "#S..#.....#...#"
-      ; "###############"
-      ]
-  in
-  let e2 =
-    String.concat_lines
-      [ "#################"
-      ; "#...#...#...#..E#"
-      ; "#.#.#.#.#.#.#.#.#"
-      ; "#.#.#.#...#...#.#"
-      ; "#.#.#.#.###.#.#.#"
-      ; "#...#.#.#.....#.#"
-      ; "#.#.#.#.#.#####.#"
-      ; "#.#...#.#.#.....#"
-      ; "#.#.#####.#.###.#"
-      ; "#.#.#.......#...#"
-      ; "#.#.###.#####.###"
-      ; "#.#.#...#.....#.#"
-      ; "#.#.#.#####.###.#"
-      ; "#.#.#.........#.#"
-      ; "#.#.#.#########.#"
-      ; "#S#.............#"
-      ; "#################"
-      ]
-  in
-  print_s [%message (f1 e1 : int) (f1 e2 : int)];
-  [%expect {| (("f1 e1" 7036) ("f1 e2" 11048)) |}]
+let p2 t0 =
+  let q = Pairing_heap.create ~cmp:(Comparable.lift Int.compare ~f:snd3) () in
+  Pairing_heap.add q (t0, 0, Set.singleton (module Vec) t0.pos);
+  let best_paths = ref (Set.empty (module Vec)) in
+  let best_scores = ref (Map.empty (module State)) in
+  let best_total_score = ref None in
+  let best_score t = Map.find !best_scores t in
+  let set_best_score t score = Ref.replace best_scores (Map.set ~key:t ~data:score) in
+  let exception Done in
+  (try
+     while not (Pairing_heap.is_empty q) do
+       let t, score, trace = Pairing_heap.pop_exn q in
+       (match !best_total_score with
+        | Some best when score > best -> raise Done
+        | _ -> ());
+       if is_winning t
+       then (
+         best_total_score := Some score;
+         Ref.replace best_paths (Set.union trace));
+       if is_valid t
+       then (
+         let can_visit =
+           match best_score t with
+           | Some prev_score when prev_score < score -> false
+           | _ ->
+             set_best_score t score;
+             true
+         in
+         if can_visit
+         then
+           next t
+           |> List.map ~f:(fun (t', cost) -> t', score + cost, Set.add trace t'.pos)
+           |> List.iter ~f:(Pairing_heap.add q))
+     done
+   with
+   | Done -> ());
+  Set.length !best_paths
 ;;
 
-let f2 _ = 0
+let%expect_test _ =
+  let t1 =
+    parse
+      (String.concat_lines
+         [ "###############"
+         ; "#.......#....E#"
+         ; "#.#.###.#.###.#"
+         ; "#.....#.#...#.#"
+         ; "#.###.#####.#.#"
+         ; "#.#.#.......#.#"
+         ; "#.#.#####.###.#"
+         ; "#...........#.#"
+         ; "###.#.#####.#.#"
+         ; "#...#.....#.#.#"
+         ; "#.#.#.###.#.#.#"
+         ; "#.....#...#.#.#"
+         ; "#.###.#.#.#.#.#"
+         ; "#S..#.....#...#"
+         ; "###############"
+         ])
+  in
+  let t2 =
+    parse
+      (String.concat_lines
+         [ "#################"
+         ; "#...#...#...#..E#"
+         ; "#.#.#.#.#.#.#.#.#"
+         ; "#.#.#.#...#...#.#"
+         ; "#.#.#.#.###.#.#.#"
+         ; "#...#.#.#.....#.#"
+         ; "#.#.#.#.#.#####.#"
+         ; "#.#...#.#.#.....#"
+         ; "#.#.#####.#.###.#"
+         ; "#.#.#.......#...#"
+         ; "#.#.###.#####.###"
+         ; "#.#.#...#.....#.#"
+         ; "#.#.#.#####.###.#"
+         ; "#.#.#.........#.#"
+         ; "#.#.#.#########.#"
+         ; "#S#.............#"
+         ; "#################"
+         ])
+  in
+  print_s [%message (p1 t1 : int) (p1 t2 : int) (p2 t1 : int) (p2 t2 : int)];
+  [%expect {| (("p1 t1" 7036) ("p1 t2" 11048) ("p2 t1" 45) ("p2 t2" 64)) |}]
+;;
+
+let f1 s = parse s |> p1
+let f2 s = parse s |> p2
 let run () = Run.run ~f1 ~f2 Day16_input.data
